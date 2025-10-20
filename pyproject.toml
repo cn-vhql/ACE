@@ -14,7 +14,11 @@ dependencies = [
     "tiktoken>=0.5.0",
     "python-dotenv>=1.0.0",
     "rich>=13.0.0",
-    "PyYAML>=6.0.0"
+    "PyYAML>=6.0.0",
+    "streamlit>=1.50.0",
+    "plotly>=5.0.0",
+    "networkx>=3.0.0",
+    "pandas>=1.5.0",
 ]
 
 [project.optional-dependencies]
