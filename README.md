@@ -127,7 +127,207 @@ if __name__ == "__main__":
 查询输入 → Generator（生成轨迹） → 执行代码 → Reflector（分析反思） → Curator（整合更新） → 策略手册演进
 ```
 
-### 📊 数据模型
+### 🏛️ 系统架构图
+
+```mermaid
+graph TB
+    subgraph "外部接口层"
+        USER[用户输入]
+        CONFIG[配置文件 config.yaml]
+        API[LLM API接口]
+    end
+
+    subgraph "ACE框架核心"
+        ACE[ACE Framework]
+
+        subgraph "核心组件"
+            GEN[Generator<br/>生成器]
+            REF[Reflector<br/>反射器]
+            CUR[Curator<br/>策展人]
+            LLM[LLM Client<br/>统一LLM客户端]
+        end
+
+        subgraph "数据模型"
+            PB[Playbook<br/>知识库]
+            BUL[Bullet<br/>知识条目]
+            TRAJ[Trajectory<br/>推理轨迹]
+            REFLECT[Reflection<br/>反思分析]
+            DELTA[DeltaUpdate<br/>增量更新]
+        end
+    end
+
+    subgraph "执行环境"
+        EXEC[代码执行器<br/>可选]
+        RESULT[执行结果]
+    end
+
+    %% 连接关系
+    USER --> ACE
+    CONFIG --> ACE
+    ACE --> GEN
+    ACE --> REF
+    ACE --> CUR
+    GEN --> LLM
+    REF --> LLM
+    CUR --> LLM
+    LLM --> API
+
+    GEN --> TRAJ
+    REF --> REFLECT
+    CUR --> DELTA
+
+    PB --> BUL
+    GEN --> PB
+    REF --> PB
+    CUR --> PB
+
+    TRAJ --> EXEC
+    EXEC --> RESULT
+    RESULT --> REF
+
+    style ACE fill:#e1f5fe
+    style GEN fill:#f3e5f5
+    style REF fill:#e8f5e8
+    style CUR fill:#fff3e0
+    style LLM fill:#fce4ec
+```
+
+### 🌊 数据流图
+
+```mermaid
+flowchart TD
+    START([开始]) --> QUERY{接收查询}
+    QUERY --> RETRIEVE[从Playbook检索相关Bullet]
+    RETRIEVE --> GENERATE[生成推理轨迹]
+
+    subgraph "生成阶段"
+        GENERATE --> LLM1[调用LLM生成]
+        LLM1 --> TRAJ[创建Trajectory对象]
+        TRAJ --> EXECUTE{执行代码?}
+        EXECUTE -->|是| CODE_RUN[运行生成代码]
+        EXECUTE -->|否| STORE_RESULT[存储结果]
+        CODE_RUN --> STORE_RESULT
+    end
+
+    STORE_RESULT --> REFLECT[生成反思分析]
+
+    subgraph "反思阶段"
+        REFLECT --> ANALYZE[分析执行结果]
+        ANALYZE --> LLM2[调用LLM反思]
+        LLM2 --> REF_OBJ[创建Reflection对象]
+        REF_OBJ --> VALIDATE{验证字段类型}
+        VALIDATE -->|列表类型| CONVERT[转换为字符串]
+        VALIDATE -->|字符串类型| SKIP[跳过转换]
+        CONVERT --> REF_COMPLETE[反思完成]
+        SKIP --> REF_COMPLETE
+    end
+
+    REF_COMPLETE --> CURATE[创建增量更新]
+
+    subgraph "策展阶段"
+        CURATE --> EXTRACT[提取关键见解]
+        EXTRACT --> LLM3[调用LLM策展]
+        LLM3 --> DELTA[创建DeltaUpdate]
+        DELTA --> APPLY[应用到Playbook]
+        APPLY --> DEDUPE[语义去重]
+        DEDUPE --> UPDATE_PB[更新知识库]
+    end
+
+    UPDATE_PB --> STATS[更新统计信息]
+    STATS --> RETURN[返回结果]
+    RETURN --> END([结束])
+
+    %% 反馈循环
+    UPDATE_PB -.->|改进知识库| RETRIEVE
+
+    style QUERY fill:#e3f2fd
+    style REFLECT fill:#e8f5e8
+    style CURATE fill:#fff3e0
+    style VALIDATE fill:#ffebee
+    style CONVERT fill:#f3e5f5
+```
+
+### 🔗 数据模型关系图
+
+```mermaid
+erDiagram
+    PLAYBOOK {
+        datetime created_at
+        datetime updated_at
+        dict sections
+        dict metadata
+    }
+
+    BULLET {
+        string id
+        string content
+        enum bullet_type
+        string section
+        int helpful_count
+        int harmful_count
+        datetime created_at
+        datetime updated_at
+        dict metadata
+    }
+
+    TRAJECTORY {
+        string id
+        string query
+        list reasoning_steps
+        string generated_code
+        string execution_result
+        boolean success
+        string error_message
+        list used_bullet_ids
+        dict metadata
+        datetime created_at
+    }
+
+    REFLECTION {
+        string id
+        string trajectory_id
+        string reasoning
+        string error_identification
+        string root_cause_analysis
+        string correct_approach
+        string key_insight
+        dict bullet_tags
+        datetime created_at
+    }
+
+    DELTA_UPDATE {
+        string id
+        list operations
+        string reasoning
+        datetime created_at
+    }
+
+    %% 关系
+    PLAYBOOK ||--o{ BULLET : contains
+    PLAYBOOK ||--o{ TRAJECTORY : influences
+    TRAJECTORY ||--|| REFLECTION : generates
+    REFLECTION ||--|| DELTA_UPDATE : creates
+    DELTA_UPDATE ||--o{ BULLET : modifies
+
+    %% 标签类型
+    enum BULLET_TYPE {
+        STRATEGY
+        INSIGHT
+        ERROR_PATTERN
+        API_GUIDELINE
+        VERIFICATION_CHECK
+        FORMULA
+        DOMAIN_KNOWLEDGE
+    }
+
+    enum BULLET_TAG {
+        HELPFUL
+        HARMFUL
+        NEUTRAL
+    }
+```
+
+### 📊 数据模型详解
 
 ```python
 # 策略手册 - 知识的容器
