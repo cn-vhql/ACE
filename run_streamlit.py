@@ -99,8 +99,8 @@ def main():
     parser.add_argument(
         '--host', '-H',
         type=str,
-        default='localhost',
-        help='Host to bind the dashboard to (default: localhost)'
+        default='0.0.0.0',
+        help='Host to bind the dashboard to (default: 0.0.0.0)'
     )
 
     parser.add_argument(

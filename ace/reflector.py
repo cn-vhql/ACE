@@ -108,13 +108,22 @@ Please provide your analysis as a JSON object."""
                 except ValueError:
                     bullet_tags[bullet_id] = BulletTag.NEUTRAL
             
+            # Helper function to convert list to string
+            def ensure_string(value):
+                if value is None:
+                    return None
+                elif isinstance(value, list):
+                    return " ".join(str(item) for item in value) if value else None
+                else:
+                    return str(value)
+
             reflection = Reflection(
                 trajectory_id=trajectory.id,
-                reasoning=response.get("reasoning", ""),
-                error_identification=response.get("error_identification"),
-                root_cause_analysis=response.get("root_cause_analysis"),
-                correct_approach=response.get("correct_approach"),
-                key_insight=response.get("key_insight"),
+                reasoning=ensure_string(response.get("reasoning", "")),
+                error_identification=ensure_string(response.get("error_identification")),
+                root_cause_analysis=ensure_string(response.get("root_cause_analysis")),
+                correct_approach=ensure_string(response.get("correct_approach")),
+                key_insight=ensure_string(response.get("key_insight")),
                 bullet_tags=bullet_tags,
                 metadata={"raw_response": response}
             )
@@ -174,13 +183,22 @@ Please provide an improved reflection as a JSON object with the same structure."
                 except ValueError:
                     pass
             
+            # Helper function to convert list to string
+            def ensure_string(value):
+                if value is None:
+                    return None
+                elif isinstance(value, list):
+                    return " ".join(str(item) for item in value) if value else None
+                else:
+                    return str(value)
+
             refined_reflection = Reflection(
                 trajectory_id=trajectory.id,
-                reasoning=response.get("reasoning", reflection.reasoning),
-                error_identification=response.get("error_identification", reflection.error_identification),
-                root_cause_analysis=response.get("root_cause_analysis", reflection.root_cause_analysis),
-                correct_approach=response.get("correct_approach", reflection.correct_approach),
-                key_insight=response.get("key_insight", reflection.key_insight),
+                reasoning=ensure_string(response.get("reasoning", reflection.reasoning)),
+                error_identification=ensure_string(response.get("error_identification", reflection.error_identification)),
+                root_cause_analysis=ensure_string(response.get("root_cause_analysis", reflection.root_cause_analysis)),
+                correct_approach=ensure_string(response.get("correct_approach", reflection.correct_approach)),
+                key_insight=ensure_string(response.get("key_insight", reflection.key_insight)),
                 bullet_tags=bullet_tags,
                 metadata={
                     "round": round_num,
