@@ -247,73 +247,7 @@ flowchart TD
     style CONVERT fill:#f3e5f5
 ```
 
-### 🔗 Data Model Relationship Diagram
 
-```mermaid
-erDiagram
-    PLAYBOOK {
-        datetime created_at
-        datetime updated_at
-        dict sections
-        dict metadata
-    }
-
-    BULLET {
-        string id
-        string content
-        string bullet_type
-        string section
-        int helpful_count
-        int harmful_count
-        datetime created_at
-        datetime updated_at
-        dict metadata
-    }
-
-    TRAJECTORY {
-        string id
-        string query
-        list reasoning_steps
-        string generated_code
-        string execution_result
-        boolean success
-        string error_message
-        list used_bullet_ids
-        dict metadata
-        datetime created_at
-    }
-
-    REFLECTION {
-        string id
-        string trajectory_id
-        string reasoning
-        string error_identification
-        string root_cause_analysis
-        string correct_approach
-        string key_insight
-        dict bullet_tags
-        datetime created_at
-    }
-
-    DELTA_UPDATE {
-        string id
-        list operations
-        string reasoning
-        datetime created_at
-    }
-
-    %% Relationships
-    PLAYBOOK ||--o{ BULLET : contains
-    PLAYBOOK ||--o{ TRAJECTORY : influences
-    TRAJECTORY ||--|| REFLECTION : generates
-    REFLECTION ||--|| DELTA_UPDATE : creates
-    DELTA_UPDATE ||--o{ BULLET : modifies
-
-    %% Data Type Notes
-    note right of BULLET : bullet_type can be:<br/>STRATEGY, INSIGHT, ERROR_PATTERN,<br/>API_GUIDELINE, VERIFICATION_CHECK,<br/>FORMULA, DOMAIN_KNOWLEDGE
-
-    note right of REFLECTION : bullet_tags key-value pairs:<br/>bullet_id -> BULLET_TAG<br/>(HELPFUL, HARMFUL, NEUTRAL)
-```
 
 ### 📊 Data Models Detail
 
