@@ -48,22 +48,33 @@ class ACE:
         self,
         query: str,
         context: Optional[Dict[str, Any]] = None,
-        update_playbook: bool = True
+        update_playbook: bool = True,
+        enable_tools: Optional[bool] = None
     ) -> Tuple[Trajectory, Optional[Reflection]]:
         """
         Solve a single query and optionally update the playbook
-        
+
         Args:
             query: The problem to solve
             context: Additional context for solving the query
             update_playbook: Whether to update the playbook after solving
-            
+            enable_tools: Whether to enable MCP tools (None = use default from config)
+
         Returns:
             Tuple of (trajectory, reflection)
         """
-        
-        # Generate trajectory
-        trajectory = await self.generator.generate_trajectory(query, self.playbook, context)
+
+        # Determine if tools should be enabled
+        if enable_tools is None:
+            enable_tools = getattr(self.config, 'mcp_config', {}).get('enabled', False)
+
+        # Generate trajectory with optional MCP tools
+        trajectory = await self.generator.generate_trajectory(
+            query,
+            self.playbook,
+            context,
+            enable_tools=enable_tools
+        )
         trajectory = await self.generator.execute_trajectory(trajectory)
         
         # Update statistics
@@ -207,22 +218,28 @@ class ACE:
         self,
         query: str,
         execution_feedback: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        enable_tools: Optional[bool] = None
     ) -> Tuple[Trajectory, Reflection]:
         """
         Perform online adaptation for a single query
-        
+
         Args:
             query: The query to solve
             execution_feedback: Feedback from execution (optional)
             context: Additional context (optional)
-            
+            enable_tools: Whether to enable MCP tools (None = use default from config)
+
         Returns:
             Tuple of (trajectory, reflection)
         """
-        
+
+        # Determine if tools should be enabled
+        if enable_tools is None:
+            enable_tools = getattr(self.config, 'mcp_config', {}).get('enabled', False)
+
         # Solve the query
-        trajectory = await self.generator.generate_trajectory(query, self.playbook, context)
+        trajectory = await self.generator.generate_trajectory(query, self.playbook, context, enable_tools=enable_tools)
         trajectory = await self.generator.execute_trajectory(trajectory)
         
         # Update statistics
@@ -333,22 +350,28 @@ class ACE:
         self,
         test_queries: List[str],
         ground_truths: Optional[List[Any]] = None,
-        contexts: Optional[List[Dict[str, Any]]] = None
+        contexts: Optional[List[Dict[str, Any]]] = None,
+        enable_tools: Optional[bool] = None
     ) -> Dict[str, Any]:
         """
         Evaluate performance on test data (without updating playbook)
-        
+
         Args:
             test_queries: List of test queries
             ground_truths: List of ground truth answers (optional)
             contexts: List of additional contexts (optional)
-            
+            enable_tools: Whether to enable MCP tools (None = use default from config)
+
         Returns:
             Evaluation results
         """
-        
+
         print(f"Evaluating performance on {len(test_queries)} test queries")
-        
+
+        # Determine if tools should be enabled
+        if enable_tools is None:
+            enable_tools = getattr(self.config, 'mcp_config', {}).get('enabled', False)
+
         results = {
             "total_queries": len(test_queries),
             "successful_queries": 0,
@@ -356,14 +379,14 @@ class ACE:
             "average_confidence": 0.0,
             "query_results": []
         }
-        
+
         confidences = []
-        
+
         for i, query in enumerate(test_queries):
             context = contexts[i] if contexts else None
-            
+
             # Generate trajectory without updating playbook
-            trajectory = await self.generator.generate_trajectory(query, self.playbook, context)
+            trajectory = await self.generator.generate_trajectory(query, self.playbook, context, enable_tools=enable_tools)
             trajectory = await self.generator.execute_trajectory(trajectory)
             
             # Extract confidence from metadata

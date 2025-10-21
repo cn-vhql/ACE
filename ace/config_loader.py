@@ -165,7 +165,8 @@ class ConfigLoader:
                 "provider_config": provider_config,
                 "models_config": models_config,
                 "execution_config": self.config.get("execution", {}),
-                "logging_config": self.config.get("logging", {})
+                "logging_config": self.config.get("logging", {}),
+                "mcp_config": self.config.get("mcp", {"enabled": False, "servers": {}})
             }
         )
         

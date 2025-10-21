@@ -17,6 +17,7 @@ import base64
 # ACE Framework imports
 from ace import ACE, ACEConfig, Playbook, Bullet, BulletType, BulletTag
 from ace.config_loader import get_ace_config, load_config
+from ace.mcp_client import MCPToolManager
 
 # Global variable to track utility availability
 UTILS_AVAILABLE = None
@@ -136,6 +137,12 @@ def init_session_state():
         st.session_state.current_reflection = None
     if 'config_loaded' not in st.session_state:
         st.session_state.config_loaded = False
+    if 'mcp_enabled' not in st.session_state:
+        st.session_state.mcp_enabled = False
+    if 'mcp_manager' not in st.session_state:
+        st.session_state.mcp_manager = None
+    if 'mcp_tools' not in st.session_state:
+        st.session_state.mcp_tools = []
 
 # Async function runner for Streamlit
 def run_async(func):
@@ -156,9 +163,65 @@ def initialize_ace():
         st.session_state.ace_instance = ace
         st.session_state.current_playbook = ace.playbook
         st.session_state.config_loaded = True
-        return True, "ACE Framework initialized successfully!"
+
+        # Initialize MCP if enabled in config
+        mcp_config = getattr(config, 'mcp_config', {})
+        if mcp_config.get('enabled', False):
+            success, message = initialize_mcp()
+            if success:
+                st.session_state.mcp_enabled = True
+                return True, f"ACE Framework initialized successfully with MCP tools!"
+            else:
+                st.warning(f"ACE Framework initialized but MCP failed: {message}")
+                return True, "ACE Framework initialized successfully (MCP disabled)"
+        else:
+            st.session_state.mcp_enabled = False
+            return True, "ACE Framework initialized successfully!"
+
     except Exception as e:
         return False, f"Failed to initialize ACE Framework: {str(e)}"
+
+# Initialize MCP Tools
+def initialize_mcp():
+    """Initialize MCP tool manager"""
+    try:
+        if not st.session_state.ace_instance:
+            return False, "ACE Framework must be initialized first"
+
+        config = get_ace_config()
+        mcp_manager = MCPToolManager(config)
+
+        # Try to initialize MCP connections
+        if run_async(mcp_manager.initialize()):
+            st.session_state.mcp_manager = mcp_manager
+            st.session_state.mcp_tools = mcp_manager.get_available_tools()
+            return True, f"MCP initialized with {len(st.session_state.mcp_tools)} tools"
+        else:
+            return False, "Failed to initialize MCP connections"
+
+    except Exception as e:
+        return False, f"Failed to initialize MCP: {str(e)}"
+
+# Toggle MCP Tools
+def toggle_mcp_tools():
+    """Toggle MCP tools on/off"""
+    if st.session_state.mcp_enabled:
+        # Disable MCP
+        if st.session_state.mcp_manager:
+            run_async(st.session_state.mcp_manager.cleanup())
+        st.session_state.mcp_enabled = False
+        st.session_state.mcp_manager = None
+        st.session_state.mcp_tools = []
+        return False, "MCP tools disabled"
+    else:
+        # Enable MCP
+        success, message = initialize_mcp()
+        if success:
+            st.session_state.mcp_enabled = True
+            return True, message
+        else:
+            st.session_state.mcp_enabled = False
+            return False, message
 
 # Playbook management functions
 def save_playbook_to_session(playbook_data):
@@ -216,11 +279,34 @@ def render_sidebar():
         if st.session_state.config_loaded:
             st.success("✅ ACE Framework Ready")
 
+            # MCP Status and Controls
+            st.header("🔧 MCP Tools")
+            mcp_status = "🟢 Enabled" if st.session_state.mcp_enabled else "🔴 Disabled"
+            st.write(f"Status: {mcp_status}")
+
+            if st.session_state.mcp_enabled:
+                st.info(f"📋 {len(st.session_state.mcp_tools)} MCP tools available")
+                if st.button("🔄 Disable MCP Tools"):
+                    success, message = toggle_mcp_tools()
+                    if success:
+                        st.success(message)
+                    else:
+                        st.error(message)
+                    st.rerun()
+            else:
+                if st.button("🚀 Enable MCP Tools"):
+                    success, message = toggle_mcp_tools()
+                    if success:
+                        st.success(message)
+                        st.rerun()
+                    else:
+                        st.error(message)
+
             # Navigation
             st.header("📍 Navigation")
             page = st.selectbox(
                 "Select Page",
-                ["🏠 Dashboard", "💬 Q&A Interface", "📚 Playbook Manager",
+                ["🏠 Dashboard", "💬 Q&A Interface", "🔧 MCP Tools Manager", "📚 Playbook Manager",
                  "📊 Statistics", "⚙️ Configuration", "🧪 Batch Processing"]
             )
 
@@ -312,18 +398,27 @@ def render_qa_interface():
         st.write("")  # Spacer
         st.write("")  # Spacer
         if st.button("🚀 Solve", type="primary", disabled=not query):
-            solve_query(query)
+            # Get MCP enabled state from the checkbox
+            enable_mcp = st.session_state.get('enable_mcp_checkbox', st.session_state.mcp_enabled)
+            solve_query(query, enable_mcp)
 
     # Context options
     with st.expander("🎛️ Advanced Options"):
         col1, col2 = st.columns(2)
         with col1:
             update_playbook = st.checkbox("📚 Update Playbook", value=True)
+            enable_mcp = st.checkbox("🔧 Enable MCP Tools", value=st.session_state.mcp_enabled, disabled=not st.session_state.mcp_enabled, key='enable_mcp_checkbox')
             temperature = st.slider("🌡️ Temperature", 0.0, 1.0, 0.7, 0.1)
 
         with col2:
             max_tokens = st.slider("📏 Max Tokens", 512, 4096, 2048, 256)
             context_info = st.text_area("Additional Context", height=100)
+
+        # MCP tools info
+        if st.session_state.mcp_enabled and enable_mcp:
+            st.info(f"🔧 {len(st.session_state.mcp_tools)} MCP tools will be available for this query")
+        elif not st.session_state.mcp_enabled:
+            st.warning("⚠️ MCP tools are disabled. Enable them from the sidebar to use external tools.")
 
     # Results display
     if st.session_state.current_trajectory:
@@ -336,6 +431,41 @@ def render_qa_interface():
             st.success("✅ Query solved successfully!")
         else:
             st.error("❌ Query failed")
+
+        # MCP Tool Calls Display
+        if trajectory.metadata.get("tools_enabled") and trajectory.metadata.get("tool_calls"):
+            st.subheader("🔧 MCP Tool Calls")
+
+            tool_calls = trajectory.metadata.get("tool_calls", [])
+            for i, tool_call in enumerate(tool_calls, 1):
+                with st.expander(f"🔧 Tool Call {i}: {tool_call['tool_name']}"):
+                    col1, col2 = st.columns([2, 1])
+
+                    with col1:
+                        st.write(f"**Tool:** {tool_call['tool_name']}")
+                        st.write(f"**Success:** {'✅ Yes' if tool_call['success'] else '❌ No'}")
+                        if tool_call.get('arguments'):
+                            st.write("**Arguments:**")
+                            st.json(tool_call['arguments'])
+
+                    with col2:
+                        if tool_call['success']:
+                            st.success("Executed Successfully")
+                            if tool_call.get('result'):
+                                with st.expander("View Result", expanded=False):
+                                    if isinstance(tool_call['result'], str) and len(tool_call['result']) > 500:
+                                        st.text(tool_call['result'][:500] + "...")
+                                    else:
+                                        st.json(tool_call['result'] if isinstance(tool_call['result'], dict) else {"result": str(tool_call['result'])})
+                        else:
+                            st.error("Execution Failed")
+                            if tool_call.get('error'):
+                                st.error(f"Error: {tool_call['error']}")
+
+            st.info(f"📊 Total: {len(tool_calls)} tool calls executed")
+
+        elif trajectory.metadata.get("tools_enabled"):
+            st.info("🔧 MCP tools were enabled but no tool calls were made for this query")
 
         # Use enhanced trajectory details display
         utils = ensure_utils_available()
@@ -383,23 +513,34 @@ def render_qa_interface():
             st.info("⚠️ Enhanced visualization features are not available. Install missing dependencies:")
             st.code("pip install plotly networkx pandas")
 
-def solve_query(query: str):
+def solve_query(query: str, enable_mcp: bool = None):
     """Solve a query using ACE framework"""
+    if enable_mcp is None:
+        enable_mcp = st.session_state.mcp_enabled
+
     with st.spinner("🤖 Thinking..."):
         try:
+            # Use ACE's solve_query method with MCP support
             trajectory, reflection = run_async(
-                st.session_state.ace_instance.solve_query(query)
+                st.session_state.ace_instance.solve_query(
+                    query=query,
+                    update_playbook=True,
+                    enable_tools=enable_mcp
+                )
             )
 
             st.session_state.current_trajectory = trajectory
             st.session_state.current_reflection = reflection
 
-            # Add to history
+            # Add to history with MCP info
             query_data = {
                 'query': query,
                 'success': trajectory.success,
                 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                'generated_code': trajectory.generated_code
+                'generated_code': trajectory.generated_code,
+                'mcp_enabled': enable_mcp,
+                'tool_calls': len(trajectory.metadata.get('tool_calls', [])),
+                'trajectory': trajectory
             }
             st.session_state.query_history.append(query_data)
 
@@ -407,6 +548,258 @@ def solve_query(query: str):
 
         except Exception as e:
             st.error(f"❌ Error solving query: {str(e)}")
+
+def render_mcp_tools_manager():
+    """Render MCP tools management interface"""
+    st.header("🔧 MCP Tools Manager")
+
+    if not st.session_state.config_loaded:
+        st.warning("Please initialize ACE Framework first!")
+        return
+
+    # MCP Status Overview
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        status_color = "🟢" if st.session_state.mcp_enabled else "🔴"
+        st.metric("MCP Status", f"{status_color} {'Enabled' if st.session_state.mcp_enabled else 'Disabled'}")
+
+    with col2:
+        st.metric("Available Tools", len(st.session_state.mcp_tools))
+
+    with col3:
+        # Count successful tool calls from history
+        successful_calls = sum(1 for q in st.session_state.query_history if q.get('mcp_enabled', False) and q.get('tool_calls', 0) > 0)
+        st.metric("Queries with Tools", successful_calls)
+
+    with col4:
+        total_tool_calls = sum(q.get('tool_calls', 0) for q in st.session_state.query_history)
+        st.metric("Total Tool Calls", total_tool_calls)
+
+    # MCP Controls
+    st.subheader("🎛️ MCP Controls")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.session_state.mcp_enabled:
+            if st.button("🔄 Disable MCP Tools", type="secondary"):
+                success, message = toggle_mcp_tools()
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
+                st.rerun()
+        else:
+            if st.button("🚀 Enable MCP Tools", type="primary"):
+                success, message = toggle_mcp_tools()
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
+                st.rerun()
+
+    with col2:
+        if st.button("🔄 Refresh MCP Tools", disabled=not st.session_state.mcp_enabled):
+            success, message = initialize_mcp()
+            if success:
+                st.success(message)
+                st.rerun()
+            else:
+                st.error(message)
+
+    # Tools List
+    if st.session_state.mcp_enabled and st.session_state.mcp_tools:
+        st.subheader("📋 Available MCP Tools")
+
+        # Group tools by server
+        tools_by_server = {}
+        for tool in st.session_state.mcp_tools:
+            if tool.server_name not in tools_by_server:
+                tools_by_server[tool.server_name] = []
+            tools_by_server[tool.server_name].append(tool)
+
+        # Display tools by server
+        for server_name, server_tools in tools_by_server.items():
+            with st.expander(f"🖥️ {server_name.title()} Server ({len(server_tools)} tools)"):
+                for tool in server_tools:
+                    col1, col2 = st.columns([3, 1])
+
+                    with col1:
+                        st.write(f"**{tool.name}**")
+                        st.caption(tool.description)
+
+                        # Show input schema if available
+                        if tool.input_schema and "properties" in tool.input_schema:
+                            with st.expander(f"Parameters for {tool.name}", expanded=False):
+                                for param_name, param_info in tool.input_schema["properties"].items():
+                                    param_type = param_info.get("type", "unknown")
+                                    param_desc = param_info.get("description", "")
+                                    required = param_name in tool.input_schema.get("required", [])
+                                    req_marker = " ⚠️ Required" if required else ""
+                                    st.write(f"- **{param_name}** ({param_type}{req_marker}): {param_desc}")
+
+                    with col2:
+                        if st.button(f"🧪 Test", key=f"test_{tool.server_name}_{tool.name}"):
+                            st.session_state[f"test_tool_{tool.server_name}_{tool.name}"] = True
+
+                    # Tool testing interface
+                    if st.session_state.get(f"test_tool_{tool.server_name}_{tool.name}", False):
+                        st.write("---")
+                        st.write(f"🧪 **Test {tool.name}**")
+
+                        # Build form based on input schema
+                        test_args = {}
+                        if tool.input_schema and "properties" in tool.input_schema:
+                            for param_name, param_info in tool.input_schema["properties"].items():
+                                param_type = param_info.get("type", "string")
+                                required = param_name in tool.input_schema.get("required", [])
+
+                                if param_type == "string":
+                                    default_value = ""
+                                    if "example" in param_info:
+                                        default_value = param_info["example"]
+                                    elif param_name == "path":
+                                        default_value = "test.txt"
+                                    elif param_name == "query":
+                                        default_value = "test query"
+
+                                    test_args[param_name] = st.text_input(
+                                        f"{param_name} ({'required' if required else 'optional'})",
+                                        value=default_value,
+                                        key=f"arg_{tool.server_name}_{tool.name}_{param_name}"
+                                    )
+                                elif param_type == "integer":
+                                    test_args[param_name] = st.number_input(
+                                        f"{param_name} ({'required' if required else 'optional'})",
+                                        value=param_info.get("default", 1),
+                                        key=f"arg_{tool.server_name}_{tool.name}_{param_name}"
+                                    )
+                                elif param_type == "boolean":
+                                    test_args[param_name] = st.checkbox(
+                                        f"{param_name}",
+                                        value=param_info.get("default", False),
+                                        key=f"arg_{tool.server_name}_{tool.name}_{param_name}"
+                                    )
+
+                        # Execute tool test
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button(f"🚀 Execute {tool.name}", key=f"execute_{tool.server_name}_{tool.name}"):
+                                with st.spinner(f"Executing {tool.name}..."):
+                                    try:
+                                        result = run_async(
+                                            st.session_state.mcp_manager.call_tool(
+                                                f"{tool.server_name}.{tool.name}",
+                                                test_args
+                                            )
+                                        )
+
+                                        if result.success:
+                                            st.success("✅ Tool executed successfully!")
+                                            st.json({
+                                                "result": result.result,
+                                                "arguments": result.arguments
+                                            })
+                                        else:
+                                            st.error(f"❌ Tool execution failed: {result.error}")
+
+                                    except Exception as e:
+                                        st.error(f"❌ Error executing tool: {str(e)}")
+
+                        with col2:
+                            if st.button(f"❌ Close Test", key=f"close_{tool.server_name}_{tool.name}"):
+                                st.session_state[f"test_tool_{tool.server_name}_{tool.name}"] = False
+                                st.rerun()
+
+    elif st.session_state.mcp_enabled:
+        st.info("🔍 No MCP tools available. Check your configuration.")
+    else:
+        st.warning("⚠️ MCP tools are disabled. Enable them to see available tools.")
+
+    # Tool Usage Statistics
+    if st.session_state.query_history:
+        st.subheader("📊 Tool Usage Statistics")
+
+        # Filter queries with MCP enabled
+        mcp_queries = [q for q in st.session_state.query_history if q.get('mcp_enabled', False)]
+
+        if mcp_queries:
+            # Create DataFrame for analysis
+            mcp_df = pd.DataFrame(mcp_queries)
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # Success rate with MCP tools
+                mcp_success_rate = mcp_df['success'].mean()
+                st.metric("Success Rate with MCP", f"{mcp_success_rate:.2%}")
+
+                # Tool calls per query
+                avg_tool_calls = mcp_df['tool_calls'].mean()
+                st.metric("Avg Tool Calls per Query", f"{avg_tool_calls:.1f}")
+
+            with col2:
+                # Tool usage over time
+                if len(mcp_df) > 1:
+                    mcp_df['timestamp'] = pd.to_datetime(mcp_df['timestamp'])
+                    mcp_df = mcp_df.sort_values('timestamp')
+                    mcp_df['cumulative_tool_calls'] = mcp_df['tool_calls'].cumsum()
+
+                    fig = px.line(
+                        mcp_df,
+                        x='timestamp',
+                        y='cumulative_tool_calls',
+                        title="Cumulative Tool Usage Over Time",
+                        labels={'cumulative_tool_calls': 'Total Tool Calls', 'timestamp': 'Time'}
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Need more queries to show usage trends")
+
+        else:
+            st.info("No queries have been processed with MCP tools yet.")
+
+    # Configuration Info
+    st.subheader("⚙️ MCP Configuration")
+
+    try:
+        config = get_ace_config()
+        mcp_config = getattr(config, 'mcp_config', {})
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.write("**MCP Configuration:**")
+            st.json({
+                "enabled": mcp_config.get('enabled', False),
+                "servers": list(mcp_config.get('servers', {}).keys()),
+                "max_concurrent_calls": mcp_config.get('settings', {}).get('max_concurrent_calls', 'N/A'),
+                "default_timeout": mcp_config.get('settings', {}).get('default_timeout', 'N/A')
+            })
+
+        with col2:
+            st.write("**Recent Tool Calls (Last 5):**")
+            recent_tool_calls = []
+            for query_data in reversed(st.session_state.query_history[-5:]):
+                if query_data.get('tool_calls', 0) > 0:
+                    recent_tool_calls.append({
+                        'query': query_data['query'][:50] + "...",
+                        'tool_calls': query_data['tool_calls'],
+                        'success': query_data['success'],
+                        'time': query_data['timestamp']
+                    })
+
+            if recent_tool_calls:
+                for call in recent_tool_calls:
+                    status = "✅" if call['success'] else "❌"
+                    st.write(f"{status} **{call['tool_calls']} tools** - {call['query']}")
+                    st.caption(f"📅 {call['time']}")
+            else:
+                st.write("No recent tool calls")
+
+    except Exception as e:
+        st.error(f"Error loading MCP configuration: {str(e)}")
 
 def render_playbook_manager():
     """Render playbook management interface"""
@@ -844,7 +1237,11 @@ def process_batch_queries(queries_str: str, update_playbook: bool, epochs: int):
                 progress_bar.progress(progress)
 
                 trajectory, reflection = run_async(
-                    st.session_state.ace_instance.solve_query(query, update_playbook=update_playbook)
+                    st.session_state.ace_instance.solve_query(
+                        query,
+                        update_playbook=update_playbook,
+                        enable_tools=st.session_state.mcp_enabled
+                    )
                 )
 
                 # Add to history
@@ -875,7 +1272,10 @@ def run_evaluation(queries_str: str):
     with st.spinner("Running evaluation..."):
         try:
             results = run_async(
-                st.session_state.ace_instance.evaluate_performance(queries)
+                st.session_state.ace_instance.evaluate_performance(
+                    queries,
+                    enable_tools=st.session_state.mcp_enabled
+                )
             )
 
             st.subheader("📊 Evaluation Results")
@@ -943,6 +1343,8 @@ def main():
         render_dashboard_overview()
     elif page == "💬 Q&A Interface":
         render_qa_interface()
+    elif page == "🔧 MCP Tools Manager":
+        render_mcp_tools_manager()
     elif page == "📚 Playbook Manager":
         render_playbook_manager()
     elif page == "📊 Statistics":
