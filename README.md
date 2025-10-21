@@ -261,7 +261,7 @@ erDiagram
     BULLET {
         string id
         string content
-        enum bullet_type
+        string bullet_type
         string section
         int helpful_count
         int harmful_count
@@ -309,22 +309,10 @@ erDiagram
     REFLECTION ||--|| DELTA_UPDATE : creates
     DELTA_UPDATE ||--o{ BULLET : modifies
 
-    %% 标签类型
-    enum BULLET_TYPE {
-        STRATEGY
-        INSIGHT
-        ERROR_PATTERN
-        API_GUIDELINE
-        VERIFICATION_CHECK
-        FORMULA
-        DOMAIN_KNOWLEDGE
-    }
+    %% 数据类型说明
+    note right of BULLET : bullet_type 可以是：<br/>STRATEGY, INSIGHT, ERROR_PATTERN,<br/>API_GUIDELINE, VERIFICATION_CHECK,<br/>FORMULA, DOMAIN_KNOWLEDGE
 
-    enum BULLET_TAG {
-        HELPFUL
-        HARMFUL
-        NEUTRAL
-    }
+    note right of REFLECTION : bullet_tags 键值对：<br/>bullet_id -> BULLET_TAG<br/>(HELPFUL, HARMFUL, NEUTRAL)
 ```
 
 ### 📊 数据模型详解
@@ -949,10 +937,6 @@ python test_streamlit.py
   year={2025}
 }
 ```
-
-## 📜 许可证
-
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
 
 ---
 
